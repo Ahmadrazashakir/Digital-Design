@@ -1,0 +1,176 @@
+module bitwise(input reg [31:0] IMEMout, rs1, rs2, imm,output reg [31:0] rd);
+
+assign reg [6:0] opcode = IMEMout[6:0];
+assign reg [2:0] func3  = IMEMout[14:12];
+assign reg [4:0] rs_2   = IMEMout[24:20];
+assign reg [6:0] func7  = IMEMout[31:25];
+assign reg [4:0] shift  = rs2[4:0];
+assign reg [4:0] shift_imm  = imm[4:0];
+integer i,j;
+reg [31:0]  count;
+reg [63:0] product;
+reg found_one;
+
+always@*
+begin
+	case(opcode)
+
+		7'b0110011:          
+					case (func7)    
+						// Zba
+						7'b0010000: 
+									case(func3)
+											3'b010: rd = (rs1 << 1) + rs2;  // shift left rs1 by 1 and add to rs2
+											3'b100: rd = (rs1 << 2) + rs2;	 // shift left rs1 by 2 and add to rs2
+											3'b110: rd = (rs1 << 3) + rs2;	 // shift left rs1 by 3 and add to rs2
+									endcase
+						7'b0000101: 
+									case(func3)
+											//Zbc
+											3'b001:     								// Carry-less multiply (low-part)
+														always @(*) begin
+														product = 0; 
+														for (i = 0; i < 32; i = i + 1) begin
+															for (j = 0; j < 32; j = j + 1) begin
+																if (B[i] & A[j]) begin
+																	product[i + j] = product[i + j] ^ 1'b1; 
+																end
+															end
+														end
+														end
+														assign P = product[31:0];  
+											3'b011:	     								// Carry-less multiply (high-part)
+														always @(*) begin
+															product = 0; 
+															for (i = 0; i < 32; i = i + 1) begin
+																for (j = 0; j < 32; j = j + 1) begin
+																	if (B[i] & A[j]) begin
+																		product[i + j] = product[i + j] ^ 1'b1; 
+																	end
+																end
+															end
+															end
+															assign P = product[63:32];
+											3'b010: 									 // Carry-less multiply (reversed)
+														always @(*) begin
+															product = 0; 
+															for (i = 0; i < 32; i = i + 1) begin
+																for (j = 0; j < 32; j = j + 1) begin
+																	if (B[i] & A[j]) begin
+																		product[i + j] = product[i + j] ^ 1'b1; 
+																	end
+																end
+															end
+															end
+															assign P = product[62:31];
+											//Zbb
+											3'b100: rd = ((rs1 < rs2) ? rs1 : rs2); //min of rs1 and rs2 (signed)
+											3'b101:	rd = ((rs1 < rs2) ? rs1 : rs2);	//min of rs1 and rs2 (unsigned)
+											3'b110:	rd = ((rs1 > rs2) ? rs1 : rs2);	//max of rs1 and rs2 (signed)
+											3'b111:	rd = ((rs1 > rs2) ? rs1 : rs2);	//max of rs1 and rs2 (unsigned)
+									endcase
+						//Zbs
+						7'b0100100: 
+									case(func3)
+											3'b001: rd = rs1 & ~(1 << rs2);  // single bit cleared   from rs1 at the index specified in rs2
+											3'b101:	rd = rs1 &  (1 << rs2);  // single bit extracted from rs1 at the index specified in rs2
+									endcase
+						7'b0110100: 
+									if (func3==3'b001) 
+										begin
+											rd = rs1 ^ (1 << rs2);	// single bit inverted in rs1 at the index specified in rs2
+										end
+						7'b0010100: 
+						            if (func3==3'b001) 
+						            	begin
+						                	rd = rs1 | (1 << rs2);  // single bit set in rs1 at the index specified in rs2
+						                end
+						7'b0100000: 
+									case (func3)
+											3'b100: rd = ~(rs1 ^ rs2);	//xnor
+											3'b110: rd = rs1 | ~(rs2);	//or with inverted operand (rs2)
+											3'b111: rd = rs1 & ~(rs2);  //and with inverted operand(rs2)
+									endcase						   
+
+						7'b0110000: 
+								case (func3)
+									3'b001: rd = {rs1 << shift, rs1 >> (32 - shift)}; // rotate rs1 to left by amount in rs2
+									3'b101: rd = {rs1 >> shift, rs1 << (32 - shift)}; // rotate rs1 to right by amount in rs2 
+								endcase
+						7'b0000100: if(func3 == 3'b100)  //zero extend halfword
+										begin
+											if (rs_2==5'b00000) 
+											begin
+												rd = {{16'b0, rs1[15:0]}; 
+											end
+										end 
+					endcase 
+				 
+					//Zbs (imm instructions)
+		7'b0010011:
+				case (func3)	
+						3'b001: 
+								case(func7)
+									7'b0100100:  rd = rs1 & ~(1 << imm);    // single bit cleared   from rs1 at the index specified in imm
+									7'b0110100:	 rd = rs1 ^  (1 << imm);    // single bit inverted in rs1 at the index specified in imm
+									7'b0010100:  rd = rs1 |  (1 << imm);    // single bit set in rs1 at the index specified in imm
+				    //Zbb (counting) 
+									7'b0110000: 
+												case (rs_2)
+													5'b00000:                      //(count leading zeroes)
+																begin
+																	i = 31; count = 0; found_one = 0;
+																	while(i >= 0 && !found_one)
+																	begin
+																		if (rs1[i]) begin found_one = 1; count = 31-i;  end 
+																		i = i-1;
+																	end
+																		if (!found_one) begin count = 32; end
+																end
+													5'b00010:                      //(count one's)
+																begin
+																	count = 0; i = 31;
+																	for(i=31; i>=0;i=i-1)
+																	begin
+																		if(rs1[i])
+																			count = count + 1;
+																	end
+																end
+													5'b00001:                      //(count trailing zeroes)
+															 	begin
+															 		i = 0; count = 0; found_one = 0;
+																	while(i >= 0 && !found_one)
+																	begin
+																		if (rs1[i]) begin found_one = 1; count = 31-i;  end 
+																		i = i+1;
+																	end
+																		if (!found_one) begin j = 32; end
+															 	end
+													5'b00100: //sign extend byte
+																begin
+																	rd = {{24{rs1[7]}}, rs1[7:0]};
+																end
+													5'b00101: //sign extend halfword
+																begin
+																	rd = {{16{rs1[15]}}, rs1[15:0]};
+																end
+												endcase
+								endcase
+						3'b101: 
+								case(func7)
+								7'b0100100: rd = rs1 & (1 << imm);	 // single bit extracted from rs1 at the index specified in imm
+								7'b0110000: rd = {rs1 >> shift_imm, rs1 << (32 - shift_imm)}; //rotate rs1 to right by amount in imm
+								7'b0010100: rd = {|rs[31:24],|rs[23:16],|rs[15:8],|rs[7:0]};  // orc.b
+								7'b0110100: rd = {rs1[7:0], rs1[15:8], rs1[23:16],rs1[31:24]};// reverse order of bytes(rev8)
+								endcase	
+				endcase
+		7'b0111011:
+				case (func7)
+					7'b0110000: if(func3==3'b101)    //rotate right word
+								begin
+								 	rotated = {rs1[15:0] >> shift, rs1[15:0] << (16 - shift)};
+ 									rd = {{16{rotated[15]}}, rotated};
+								end  
+				endcase
+end
+endmodule

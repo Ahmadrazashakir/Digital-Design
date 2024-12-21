@@ -1,0 +1,12 @@
+module tb_clz();
+  reg rs1;
+  wire out;
+  
+  clz clz1(.rs1(rs1),.j(out));
+  
+ initial 
+   begin
+rs1 = 32b'00000110101010101010101011011010;
+     
+   end
+  endmodule
